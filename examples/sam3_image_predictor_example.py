@@ -40,56 +40,56 @@ fig = plot_results(img0, inference_state)
 fig.savefig("sam3_image_predictor_example_1.png")
 plt.close(fig)
 
-# # Here the box is in  (x,y,w,h) format, where (x,y) is the top left corner.
-# box_input_xywh = torch.tensor([480.0, 290.0, 110.0, 360.0]).view(-1, 4)
-# box_input_cxcywh = box_xywh_to_cxcywh(box_input_xywh)
+# Here the box is in  (x,y,w,h) format, where (x,y) is the top left corner.
+box_input_xywh = torch.tensor([480.0, 290.0, 110.0, 360.0]).view(-1, 4)
+box_input_cxcywh = box_xywh_to_cxcywh(box_input_xywh)
 
-# norm_box_cxcywh = normalize_bbox(box_input_cxcywh, width, height).flatten().tolist()
-# print("Normalized box input:", norm_box_cxcywh)
+norm_box_cxcywh = normalize_bbox(box_input_cxcywh, width, height).flatten().tolist()
+print("Normalized box input:", norm_box_cxcywh)
 
-# processor.reset_all_prompts(inference_state)
-# inference_state = processor.add_geometric_prompt(
-#     state=inference_state, box=norm_box_cxcywh, label=True
-# )
+processor.reset_all_prompts(inference_state)
+inference_state = processor.add_geometric_prompt(
+    state=inference_state, box=norm_box_cxcywh, label=True
+)
 
-# img0 = Image.open(image_path)
-# image_with_box = draw_box_on_image(img0, box_input_xywh.flatten().tolist())
-# fig_box, ax_box = plt.subplots(figsize=(12, 8))
-# ax_box.imshow(image_with_box)
-# ax_box.axis("off")
-# fig_box.savefig("sam3_image_predictor_example_2_.png")
-# plt.close(fig_box)
+img0 = Image.open(image_path)
+image_with_box = draw_box_on_image(img0, box_input_xywh.flatten().tolist())
+fig_box, ax_box = plt.subplots(figsize=(12, 8))
+ax_box.imshow(image_with_box)
+ax_box.axis("off")
+fig_box.savefig("sam3_image_predictor_example_2_.png")
+plt.close(fig_box)
 
-# fig = plot_results(img0, inference_state)
-# fig.savefig("sam3_image_predictor_example_2.png")
-# plt.close(fig)
+fig = plot_results(img0, inference_state)
+fig.savefig("sam3_image_predictor_example_2.png")
+plt.close(fig)
 
-# box_input_xywh = [[480.0, 290.0, 110.0, 360.0], [370.0, 280.0, 115.0, 375.0]]
-# box_input_cxcywh = box_xywh_to_cxcywh(torch.tensor(box_input_xywh).view(-1,4))
-# norm_boxes_cxcywh = normalize_bbox(box_input_cxcywh, width, height).tolist()
+box_input_xywh = [[480.0, 290.0, 110.0, 360.0], [370.0, 280.0, 115.0, 375.0]]
+box_input_cxcywh = box_xywh_to_cxcywh(torch.tensor(box_input_xywh).view(-1,4))
+norm_boxes_cxcywh = normalize_bbox(box_input_cxcywh, width, height).tolist()
 
-# box_labels = [True, False]
+box_labels = [True, False]
 
-# processor.reset_all_prompts(inference_state)
+processor.reset_all_prompts(inference_state)
 
-# for box, label in zip(norm_boxes_cxcywh, box_labels):
-#     inference_state = processor.add_geometric_prompt(
-#         state=inference_state, box=box, label=label
-#     )
+for box, label in zip(norm_boxes_cxcywh, box_labels):
+    inference_state = processor.add_geometric_prompt(
+        state=inference_state, box=box, label=label
+    )
 
-# img0 = Image.open(image_path)
-# image_with_box = img0
-# for i in range(len(box_input_xywh)):
-#     if box_labels[i] == 1:
-#         color = (0, 255, 0)
-#     else:
-#         color = (255, 0, 0)
-#     image_with_box = draw_box_on_image(image_with_box, box_input_xywh[i], color)
-# fig_box, ax_box = plt.subplots(figsize=(12, 8))
-# ax_box.imshow(image_with_box)
-# ax_box.axis("off")
-# fig_box.savefig("sam3_image_predictor_example_3_.png")
-# plt.close(fig_box)
-# fig = plot_results(img0, inference_state)
-# fig.savefig("sam3_image_predictor_example_3.png")
-# plt.close(fig)
+img0 = Image.open(image_path)
+image_with_box = img0
+for i in range(len(box_input_xywh)):
+    if box_labels[i] == 1:
+        color = (0, 255, 0)
+    else:
+        color = (255, 0, 0)
+    image_with_box = draw_box_on_image(image_with_box, box_input_xywh[i], color)
+fig_box, ax_box = plt.subplots(figsize=(12, 8))
+ax_box.imshow(image_with_box)
+ax_box.axis("off")
+fig_box.savefig("sam3_image_predictor_example_3_.png")
+plt.close(fig_box)
+fig = plot_results(img0, inference_state)
+fig.savefig("sam3_image_predictor_example_3.png")
+plt.close(fig)

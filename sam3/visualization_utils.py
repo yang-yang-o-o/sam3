@@ -856,13 +856,14 @@ def visualize_prompt_overlay(
 
 
 def plot_results(img, results):
-    plt.figure(figsize=(12, 8))
-    plt.imshow(img)
+    """Plot detections on *img* using a fresh figure/axes (avoids overlaying prior plots)."""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.imshow(img)
     nb_objects = len(results["scores"])
     print(f"found {nb_objects} object(s)")
     for i in range(nb_objects):
         color = COLORS[i % len(COLORS)]
-        plot_mask(results["masks"][i].squeeze(0).cpu(), color=color)
+        plot_mask(results["masks"][i].squeeze(0).cpu(), color=color, ax=ax)
         w, h = img.size
         prob = results["scores"][i].item()
         plot_bbox(
@@ -873,7 +874,11 @@ def plot_results(img, results):
             box_format="XYXY",
             color=color,
             relative_coords=False,
+            ax=ax,
         )
+    ax.axis("off")
+    fig.tight_layout()
+    return fig
 
 
 def single_visualization(img, anns, title):
