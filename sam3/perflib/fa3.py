@@ -14,9 +14,34 @@ def flash_attn_func_op(
     return fa3(q, k, v)
 
 
+def _fa3_compute_dtype(device: torch.device) -> torch.dtype:
+    """Hopper (sm90+) supports float8; Ampere/Ada (e.g. RTX 4090) need fp16/bf16."""
+    if device.type != "cuda":
+        return torch.bfloat16
+    major = torch.cuda.get_device_properties(device).major
+    if major >= 9:
+        return torch.float8_e4m3fn
+    return torch.bfloat16
+
+
+def _fa3_unified_dtype(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.dtype:
+    """FA3 requires q/k/v to share one dtype (autocast + RoPE can mix bf16 and fp32)."""
+    dtypes = {q.dtype, k.dtype, v.dtype}
+    if len(dtypes) == 1 and q.dtype in (torch.float16, torch.bfloat16):
+        return q.dtype
+    if torch.bfloat16 in dtypes:
+        return torch.bfloat16
+    if torch.float16 in dtypes:
+        return torch.float16
+    return _fa3_compute_dtype(q.device)
+
+
 def flash_attn_func(q, k, v):
-    dtype = torch.float8_e4m3fn
-    return flash_attn_func_op(q.to(dtype), k.to(dtype), v.to(dtype)).to(q.dtype)
+    out_dtype = q.dtype
+    compute_dtype = _fa3_unified_dtype(q, k, v)
+    if q.dtype != compute_dtype or k.dtype != compute_dtype or v.dtype != compute_dtype:
+        q, k, v = q.to(compute_dtype), k.to(compute_dtype), v.to(compute_dtype)
+    return flash_attn_func_op(q, k, v).to(out_dtype)
 
 
 @flash_attn_func_op.register_fake

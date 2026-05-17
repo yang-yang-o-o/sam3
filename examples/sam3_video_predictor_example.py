@@ -2,11 +2,19 @@
 
 
 import os
+
 import torch
 
 from _paths import SAM3_CHECKPOINT, SAM3_ROOT
 
 sam3_root = SAM3_ROOT
+
+# Output directory for videos and preview images (works on headless cloud servers)
+OUTPUT_DIR = os.environ.get(
+    "SAM3_VIDEO_OUTPUT_DIR", os.path.join(os.path.dirname(__file__), "output")
+)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+VIDEO_FPS = int(os.environ.get("SAM3_VIDEO_FPS", "24"))
 
 # use all available GPUs on the machine
 gpus_to_use = range(torch.cuda.device_count())
@@ -22,21 +30,16 @@ predictor = build_sam3_video_predictor(
 
 
 import glob
-import os
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 from sam3.visualization_utils import (
     load_frame,
     prepare_masks_for_visualization,
-    visualize_formatted_frame_output,
+    render_formatted_masks_on_frame,
+    save_formatted_mask_video,
 )
-
-# font size for axes titles
-plt.rcParams["axes.titlesize"] = 12
-plt.rcParams["figure.titlesize"] = 12
 
 
 def propagate_in_video(predictor, session_id):
@@ -51,6 +54,39 @@ def propagate_in_video(predictor, session_id):
         outputs_per_frame[response["frame_index"]] = response["outputs"]
 
     return outputs_per_frame
+
+
+def save_propagation_results(
+    name,
+    video_frames,
+    outputs_per_frame,
+    sample_frame_stride=60,
+):
+    """Save full tracking video and sample preview PNGs to OUTPUT_DIR."""
+    video_path = os.path.join(OUTPUT_DIR, f"{name}.mp4")
+    save_formatted_mask_video(
+        video_frames,
+        outputs_per_frame,
+        video_path,
+        fps=VIDEO_FPS,
+    )
+
+    preview_dir = os.path.join(OUTPUT_DIR, f"{name}_frames")
+    os.makedirs(preview_dir, exist_ok=True)
+    frame_indices = sorted(outputs_per_frame.keys())
+    for frame_idx in range(0, len(frame_indices), sample_frame_stride):
+        if frame_idx >= len(frame_indices):
+            break
+        actual_idx = frame_indices[frame_idx]
+        img = load_frame(video_frames[actual_idx])
+        overlay = render_formatted_masks_on_frame(
+            img, outputs_per_frame[actual_idx]
+        )
+        Image.fromarray(overlay).save(
+            os.path.join(preview_dir, f"frame_{actual_idx:05d}.png")
+        )
+
+    print(f"Saved results for '{name}' under {OUTPUT_DIR}")
 
 
 def abs_to_rel_coords(coords, IMG_WIDTH, IMG_HEIGHT, coord_type="point"):
@@ -132,32 +168,20 @@ response = predictor.handle_request(
 )
 out = response["outputs"]
 
-plt.close("all")
-visualize_formatted_frame_output(
-    frame_idx,
-    video_frames_for_vis,
-    outputs_list=[prepare_masks_for_visualization({frame_idx: out})],
-    titles=["SAM 3 Dense Tracking outputs"],
-    figsize=(6, 4),
-)
+frame0_vis = prepare_masks_for_visualization({frame_idx: out})
+Image.fromarray(
+    render_formatted_masks_on_frame(
+        load_frame(video_frames_for_vis[frame_idx]), frame0_vis[frame_idx]
+    )
+).save(os.path.join(OUTPUT_DIR, "00_text_prompt_frame0.png"))
 
 
 # now we propagate the outputs from frame 0 to the end of the video and collect all outputs
 outputs_per_frame = propagate_in_video(predictor, session_id)
 
-# finally, we reformat the outputs for visualization and plot the outputs every 60 frames
+# finally, we reformat the outputs for visualization and save video + preview frames
 outputs_per_frame = prepare_masks_for_visualization(outputs_per_frame)
-
-vis_frame_stride = 60
-plt.close("all")
-for frame_idx in range(0, len(outputs_per_frame), vis_frame_stride):
-    visualize_formatted_frame_output(
-        frame_idx,
-        video_frames_for_vis,
-        outputs_list=[outputs_per_frame],
-        titles=["SAM 3 Dense Tracking outputs"],
-        figsize=(6, 4),
-    )
+save_propagation_results("01_text_person", video_frames_for_vis, outputs_per_frame)
 
 
 # we pick id 2, which is the dancer in the front
@@ -174,19 +198,10 @@ response = predictor.handle_request(
 # now we propagate the outputs from frame 0 to the end of the video and collect all outputs
 outputs_per_frame = propagate_in_video(predictor, session_id)
 
-# finally, we reformat the outputs for visualization and plot the outputs every 60 frames
 outputs_per_frame = prepare_masks_for_visualization(outputs_per_frame)
-
-vis_frame_stride = 60
-plt.close("all")
-for frame_idx in range(0, len(outputs_per_frame), vis_frame_stride):
-    visualize_formatted_frame_output(
-        frame_idx,
-        video_frames_for_vis,
-        outputs_list=[outputs_per_frame],
-        titles=["SAM 3 Dense Tracking outputs"],
-        figsize=(6, 4),
-    )
+save_propagation_results(
+    "02_after_remove_obj2", video_frames_for_vis, outputs_per_frame
+)
 
 
 sample_img = Image.fromarray(load_frame(video_frames_for_vis[0]))
@@ -227,34 +242,21 @@ response = predictor.handle_request(
 )
 out = response["outputs"]
 
-plt.close("all")
-visualize_formatted_frame_output(
-    frame_idx,
-    video_frames_for_vis,
-    outputs_list=[prepare_masks_for_visualization({frame_idx: out})],
-    titles=["SAM 3 Dense Tracking outputs"],
-    figsize=(6, 4),
-    points_list=[points_abs],
-    points_labels_list=[labels],
-)
+frame0_vis = prepare_masks_for_visualization({frame_idx: out})
+Image.fromarray(
+    render_formatted_masks_on_frame(
+        load_frame(video_frames_for_vis[frame_idx]), frame0_vis[frame_idx]
+    )
+).save(os.path.join(OUTPUT_DIR, "03_point_prompt_frame0.png"))
 
 
 # now we propagate the outputs from frame 0 to the end of the video and collect all outputs
 outputs_per_frame = propagate_in_video(predictor, session_id)
 
-# finally, we reformat the outputs for visualization and plot the outputs every 60 frames
 outputs_per_frame = prepare_masks_for_visualization(outputs_per_frame)
-
-vis_frame_stride = 60
-plt.close("all")
-for frame_idx in range(0, len(outputs_per_frame), vis_frame_stride):
-    visualize_formatted_frame_output(
-        frame_idx,
-        video_frames_for_vis,
-        outputs_list=[outputs_per_frame],
-        titles=["SAM 3 Dense Tracking outputs"],
-        figsize=(6, 4),
-    )
+save_propagation_results(
+    "03_point_prompt_dancer", video_frames_for_vis, outputs_per_frame
+)
 
 
 # For the dancer in the front, suppose now we only want to segment her T-shirt instead of her whole body
@@ -293,34 +295,21 @@ response = predictor.handle_request(
 )
 out = response["outputs"]
 
-plt.close("all")
-visualize_formatted_frame_output(
-    frame_idx,
-    video_frames_for_vis,
-    outputs_list=[prepare_masks_for_visualization({frame_idx: out})],
-    titles=["SAM 3 Dense Tracking outputs"],
-    figsize=(6, 4),
-    points_list=[points_abs],
-    points_labels_list=[labels],
-)
+frame0_vis = prepare_masks_for_visualization({frame_idx: out})
+Image.fromarray(
+    render_formatted_masks_on_frame(
+        load_frame(video_frames_for_vis[frame_idx]), frame0_vis[frame_idx]
+    )
+).save(os.path.join(OUTPUT_DIR, "04_tshirt_prompt_frame0.png"))
 
 
 # now we propagate the outputs from frame 0 to the end of the video and collect all outputs
 outputs_per_frame = propagate_in_video(predictor, session_id)
 
-# finally, we reformat the outputs for visualization and plot the outputs every 60 frames
 outputs_per_frame = prepare_masks_for_visualization(outputs_per_frame)
-
-vis_frame_stride = 60
-plt.close("all")
-for frame_idx in range(0, len(outputs_per_frame), vis_frame_stride):
-    visualize_formatted_frame_output(
-        frame_idx,
-        video_frames_for_vis,
-        outputs_list=[outputs_per_frame],
-        titles=["SAM 3 Dense Tracking outputs"],
-        figsize=(6, 4),
-    )
+save_propagation_results(
+    "04_tshirt_refinement", video_frames_for_vis, outputs_per_frame
+)
 
 
 # finally, close the inference session to free its GPU resources
@@ -336,3 +325,7 @@ _ = predictor.handle_request(
 # after all inference is done, we can shutdown the predictor
 # to free up the multi-GPU process group
 predictor.shutdown()
+
+print(f"\nAll outputs saved to: {os.path.abspath(OUTPUT_DIR)}")
+print("  Videos: 01_text_person.mp4, 02_after_remove_obj2.mp4, ...")
+print("  Preview frames: <name>_frames/frame_*.png")

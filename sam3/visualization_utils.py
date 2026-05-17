@@ -465,6 +465,75 @@ def render_masklet_frame(img, outputs, frame_idx=None, alpha=0.5):
     return overlay
 
 
+def render_formatted_masks_on_frame(img, masks_by_obj_id, alpha=0.5, draw_boxes=True):
+    """Render {obj_id: binary_mask} onto an image; returns uint8 RGB array."""
+    if img.dtype == np.float32 or img.max() <= 1.0:
+        img = (img * 255).astype(np.uint8)
+    img = img[..., :3]
+    height, width = img.shape[:2]
+    overlay = img.copy()
+
+    for obj_id, binary_mask in masks_by_obj_id.items():
+        if not isinstance(binary_mask, torch.Tensor):
+            binary_mask = torch.tensor(binary_mask)
+        if not binary_mask.any():
+            continue
+
+        color = COLORS[obj_id % len(COLORS)]
+        color255 = (color * 255).astype(np.uint8)
+        mask_np = binary_mask.numpy().astype(np.float32)
+        if mask_np.shape != (height, width):
+            mask_np = cv2.resize(
+                mask_np, (width, height), interpolation=cv2.INTER_NEAREST
+            )
+        mask_bool = mask_np > 0.5
+        for c in range(3):
+            overlay[..., c][mask_bool] = (
+                alpha * color255[c] + (1 - alpha) * overlay[..., c][mask_bool]
+            ).astype(np.uint8)
+
+        if draw_boxes and mask_bool.any():
+            box_xyxy = masks_to_boxes(binary_mask.unsqueeze(0)).squeeze().tolist()
+            x1, y1, x2, y2 = [int(v) for v in box_xyxy]
+            color_bgr = tuple(int(x) for x in color255)
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), color_bgr, 2)
+            cv2.putText(
+                overlay,
+                f"id={obj_id}",
+                (x1, max(y1 - 10, 0)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color_bgr,
+                1,
+                cv2.LINE_AA,
+            )
+
+    return overlay
+
+
+def save_formatted_mask_video(
+    video_frames, outputs_per_frame, out_path, alpha=0.5, fps=10
+):
+    """Save segmentation video from prepare_masks_for_visualization() output."""
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    first_img = load_frame(video_frames[0])
+    height, width = first_img.shape[:2]
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
+    if not writer.isOpened():
+        raise RuntimeError(f"Failed to open VideoWriter for {out_path}")
+
+    frame_indices = sorted(outputs_per_frame.keys())
+    for frame_idx in tqdm(frame_indices, desc=f"Saving {os.path.basename(out_path)}"):
+        img = load_frame(video_frames[frame_idx])
+        masks = outputs_per_frame[frame_idx]
+        overlay = render_formatted_masks_on_frame(img, masks, alpha=alpha)
+        writer.write(cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+
+    writer.release()
+    print(f"Video saved to {out_path}")
+
+
 def save_masklet_video(video_frames, outputs, out_path, alpha=0.5, fps=10):
     # Each outputs dict has keys: "out_boxes_xywh", "out_probs", "out_obj_ids", "out_binary_masks"
     # video_frames: list of video frame data, same length as outputs_list
@@ -474,9 +543,13 @@ def save_masklet_video(video_frames, outputs, out_path, alpha=0.5, fps=10):
     height, width = first_img.shape[:2]
     if first_img.dtype == np.float32 or first_img.max() <= 1.0:
         first_img = (first_img * 255).astype(np.uint8)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     # Use 'mp4v' for best compatibility with VSCode playback (.mp4 files)
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter("temp.mp4", fourcc, fps, (width, height))
+    temp_path = out_path + ".tmp.mp4"
+    writer = cv2.VideoWriter(temp_path, fourcc, fps, (width, height))
+    if not writer.isOpened():
+        raise RuntimeError(f"Failed to open VideoWriter for {temp_path}")
 
     outputs_list = [
         (video_frames[frame_idx], frame_idx, outputs[frame_idx])
@@ -492,11 +565,18 @@ def save_masklet_video(video_frames, outputs, out_path, alpha=0.5, fps=10):
 
     writer.release()
 
-    # Re-encode the video for VSCode compatibility using ffmpeg
-    subprocess.run(["ffmpeg", "-y", "-i", "temp.mp4", out_path])
-    print(f"Re-encoded video saved to {out_path}")
-
-    os.remove("temp.mp4")  # Clean up temporary file
+    # Re-encode with ffmpeg when available for better player compatibility
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", temp_path, out_path],
+            check=True,
+            capture_output=True,
+        )
+        os.remove(temp_path)
+        print(f"Video saved to {out_path}")
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        os.replace(temp_path, out_path)
+        print(f"Video saved to {out_path} (ffmpeg not available, using OpenCV mp4v)")
 
 
 def save_masklet_image(frame, outputs, out_path, alpha=0.5, frame_idx=None):
